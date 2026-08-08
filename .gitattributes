@@ -1,0 +1,6 @@
+# Shell scripts must keep LF endings or bash on macOS fails with
+# "bad interpreter: /usr/bin/env bash^M" after a Windows checkout.
+* text=auto eol=lf
+*.sh text eol=lf
+devsync text eol=lf
+*.md text eol=lf
