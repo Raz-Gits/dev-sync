@@ -69,14 +69,23 @@ for skill in "$HERE"/skills/*/; do
   target="$SKILLS_DIR/$name"
   rm -rf "$target"
   # Symlink so a `git pull` in ~/dev-sync updates the skills with no reinstall.
-  # Windows often refuses symlinks without Developer Mode, so fall back to copy.
-  if ln -s "$skill" "$target" 2>/dev/null; then
+  # Under MSYS/Git Bash `ln -s` exits 0 but silently COPIES unless Developer
+  # Mode is on, so trust the -L test rather than the exit code.
+  ln -s "$skill" "$target" 2>/dev/null || true
+  if [ -L "$target" ]; then
     grn "  linked  /$name"
   else
-    cp -R "$skill" "$target"
-    yel "  copied  /$name  (symlink unavailable - re-run install.sh after pulling)"
+    rm -rf "$target"; cp -R "$skill" "$target"
+    yel "  copied  /$name"
+    COPIED=1
   fi
 done
+
+if [ "${COPIED:-0}" = "1" ]; then
+  echo
+  yel "  Skills were copied, not linked (no symlink support on this machine)."
+  yel "  After 'git pull' in ~/dev-sync, re-run install.sh to pick up changes."
+fi
 
 # ------------------------------------------------------------------ 3. PATH ----
 
