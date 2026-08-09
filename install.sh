@@ -115,24 +115,26 @@ KEY=""
 [ -z "$KEY" ] && [ -f "$KEY_WIN" ] && KEY="$KEY_WIN"
 
 echo
-if [ -n "$KEY" ]; then
-  grn "  age key found: $KEY"
-  dim "  public: $(age-keygen -y "$KEY" 2>/dev/null | head -n1)"
+# This machine gets its OWN keypair. The private half never leaves it; the
+# public half goes in recipients.txt so secrets get sealed to this machine too.
+# Nothing secret has to travel between machines, ever.
+if [ -z "$KEY" ]; then
+  bold "  no age key here yet - generating one for this machine"
+fi
+
+bash "$HERE/scripts/devsync.sh" add-key || {
+  red "  add-key failed - run it manually: devsync add-key"
+  exit 1
+}
+
+echo
+if git -C "$HERE" diff --quiet -- recipients.txt 2>/dev/null; then
   bold "this machine is ready. try: devsync doctor"
 else
-  yel "  NO AGE KEY ON THIS MACHINE"
+  yel "  recipients.txt changed - push it so your other machines learn this key:"
+  dim  "    cd $HERE && git add recipients.txt \\"
+  dim  "      && git commit -m 'recipients: add $(hostname)' && git push"
   echo
-  bold "  Copy the key from the machine that already has it."
-  dim  "  It is one short file, and it is the only thing that can open your"
-  dim  "  encrypted .env files. Do not commit it, and do not email it."
-  echo
-  dim  "  On the machine that has it:"
-  dim  "     Windows:  %APPDATA%\\sops\\age\\keys.txt"
-  dim  "     macOS:    ~/.config/sops/age/keys.txt"
-  echo
-  dim  "  Put it on this machine at:"
-  if [ "$OS" = "windows" ]; then dim "     $KEY_WIN"; else dim "     $KEY_MAC"; fi
-  echo
-  dim  "  Move it over a private channel - a password manager's secure note,"
-  dim  "  AirDrop, or a USB stick. Then run: devsync doctor"
+  dim  "  Then on repos that ALREADY have sealed secrets, run 'devsync rekey'"
+  dim  "  from a machine that can currently open them."
 fi

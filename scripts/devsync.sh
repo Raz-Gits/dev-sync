@@ -62,6 +62,29 @@ age_pubkey() {
   age-keygen -y "$kf" 2>/dev/null | head -n1
 }
 
+# Where devsync itself lives, so we can find the shared recipient list.
+DEVSYNC_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RECIPIENTS_FILE="${DEVSYNC_RECIPIENTS:-$DEVSYNC_HOME/recipients.txt}"
+
+# Every machine's PUBLIC key. Secrets are encrypted to all of them, so each
+# machine opens them with its own private key and no private key ever travels.
+age_recipients() {
+  [ -f "$RECIPIENTS_FILE" ] || die "missing $RECIPIENTS_FILE - pull the dev-sync repo"
+  local keys
+  keys="$(sed 's/#.*//' "$RECIPIENTS_FILE" | tr -d ' \t\r' | grep -E '^age1[a-z0-9]+$' | paste -sd, -)"
+  [ -n "$keys" ] || die "no age recipients in $RECIPIENTS_FILE - run: devsync add-key"
+  printf '%s' "$keys"
+}
+
+recipient_count() { age_recipients | tr ',' '\n' | grep -c . ; }
+
+# Is this machine's key actually one of the recipients? If not, it can seal
+# secrets it will never be able to reopen.
+this_machine_is_recipient() {
+  local mine; mine="$(age_pubkey)"
+  age_recipients | tr ',' '\n' | grep -qxF "$mine"
+}
+
 # ---------------------------------------------------------------- secrets ----
 
 # Every plaintext secret file we manage, and its encrypted twin.
@@ -89,7 +112,11 @@ encrypted_files() {
 
 encrypt_secrets() {
   local pub changed=0 f
-  pub="$(age_pubkey)"
+  pub="$(age_recipients)"
+  # Sealing to a recipient list that excludes this machine would produce files
+  # this machine can never reopen. Refuse rather than create that trap.
+  this_machine_is_recipient \
+    || die "this machine's key is not in $RECIPIENTS_FILE - run: devsync add-key"
   # while-read, not for-in: paths may contain spaces
   while IFS= read -r f; do
     local out="$f.sops"
@@ -202,17 +229,18 @@ EOF
   done
   grn "  .gitignore covers secrets and build artifacts"
 
-  # 4. sops recipient for this repo.
-  local pub; pub="$(age_pubkey)"
-  if [ ! -f .sops.yaml ]; then
+  # 4. sops recipients for this repo - every machine's public key, so each one
+  #    decrypts with its own private key and no private key ever travels.
+  local pub; pub="$(age_recipients)"
+  if [ ! -f .sops.yaml ] || ! grep -qF "$pub" .sops.yaml 2>/dev/null; then
     cat > .sops.yaml <<EOF
 creation_rules:
   - path_regex: \\.env(\\..*)?\$
     age: $pub
 EOF
-    grn "  wrote .sops.yaml"
+    grn "  wrote .sops.yaml ($(recipient_count) recipient machine(s))"
   else
-    dim "  .sops.yaml already exists (leaving it alone)"
+    dim "  .sops.yaml already lists the current recipients"
   fi
 
   # 5. Seal whatever secrets are sitting here right now.
@@ -411,6 +439,90 @@ git_lockfile_hashes() {
     | awk '{print $2}' | tr '\n' ' '
 }
 
+# --------------------------------------------------------------- add-key ----
+
+# Register THIS machine as a recipient. Run once per machine, then commit and
+# push dev-sync so the other machines learn about it.
+cmd_addkey() {
+  local kf mine label
+  kf="$(age_key_file)"
+
+  if [ -z "$kf" ]; then
+    # No key here yet - make one. The private half never leaves this machine.
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*) kf="${APPDATA:-$HOME/AppData/Roaming}/sops/age/keys.txt" ;;
+      *)                    kf="$HOME/.config/sops/age/keys.txt" ;;
+    esac
+    mkdir -p "$(dirname "$kf")"
+    age-keygen -o "$kf" >/dev/null 2>&1 || die "age-keygen failed"
+    chmod 600 "$kf" 2>/dev/null || true
+    grn "  generated a new age key for this machine"
+    dim "    $kf"
+  fi
+
+  mine="$(age-keygen -y "$kf" 2>/dev/null | head -n1)"
+  [ -n "$mine" ] || die "could not read a public key from $kf"
+
+  [ -f "$RECIPIENTS_FILE" ] || die "missing $RECIPIENTS_FILE - pull the dev-sync repo"
+
+  if grep -qF "$mine" "$RECIPIENTS_FILE"; then
+    grn "  this machine is already a recipient"
+    dim "    $mine"
+    return 0
+  fi
+
+  label="$(machine_name)"
+  printf '%s  # %s\n' "$mine" "$label" >> "$RECIPIENTS_FILE"
+  grn "  added this machine as a recipient"
+  dim "    $mine  # $label"
+  echo
+  bold "  next:"
+  dim  "    cd $DEVSYNC_HOME && git add recipients.txt \\"
+  dim  "      && git commit -m 'recipients: add $label' && git push"
+  echo
+  dim  "  Then in each repo that already has sealed secrets, run 'devsync rekey'"
+  dim  "  so this machine can open them. Repos set up after this need nothing."
+}
+
+# ----------------------------------------------------------------- rekey ----
+
+# Re-seal this repo's secrets for the CURRENT recipient list. Needed after a
+# machine is added, because existing files were encrypted to the old list.
+cmd_rekey() {
+  local root; root="$(repo_root)"; cd "$root"
+  bold "devsync rekey - $(basename "$root")"
+
+  local pub; pub="$(age_recipients)"
+  this_machine_is_recipient \
+    || die "this machine's key is not in $RECIPIENTS_FILE - run: devsync add-key"
+
+  # Refresh .sops.yaml so future files pick up the same list.
+  cat > .sops.yaml <<EOF
+creation_rules:
+  - path_regex: \\.env(\\..*)?\$
+    age: $pub
+EOF
+
+  local n=0 f
+  while IFS= read -r f; do
+    local plain="${f%.sops}"
+    # Decrypt with whatever key opens it today, re-seal to the full list.
+    sops decrypt --input-type dotenv --output-type dotenv "$f" > "$plain.rekey.tmp" 2>/dev/null \
+      || { rm -f "$plain.rekey.tmp"; die "cannot decrypt $f on this machine - rekey from a machine that can"; }
+    sops encrypt --input-type dotenv --output-type dotenv --age "$pub" "$plain.rekey.tmp" > "$f.tmp" \
+      || { rm -f "$plain.rekey.tmp" "$f.tmp"; die "failed to re-seal $f"; }
+    mv "$f.tmp" "$f"; rm -f "$plain.rekey.tmp"
+    grn "  re-sealed  $f"
+    n=$((n + 1))
+  done < <(encrypted_files)
+
+  if [ "$n" -eq 0 ]; then
+    dim "  no sealed files here - nothing to re-seal"
+  fi
+  echo
+  grn "rekeyed for $(recipient_count) machine(s). Commit and push."
+}
+
 # ---------------------------------------------------------------- doctor ----
 
 cmd_doctor() {
@@ -431,8 +543,25 @@ cmd_doctor() {
     dim "        public: $(age-keygen -y "$kf" 2>/dev/null | head -n1)"
   else
     red "  MISS  no age key on this machine"
-    dim "        copy keys.txt over from your other machine, or:"
-    dim "        age-keygen -o \"\$HOME/.config/sops/age/keys.txt\""
+    dim "        create one and register it:  devsync add-key"
+    ok=1
+  fi
+
+  # Recipients: every machine that can open sealed secrets.
+  if [ -f "$RECIPIENTS_FILE" ]; then
+    grn "  ok    recipients  ($(recipient_count) machine(s))"
+    sed 's/#.*//' "$RECIPIENTS_FILE" | tr -d ' \t\r' | grep -E '^age1' | while read -r k; do
+      local who; who="$(grep -F "$k" "$RECIPIENTS_FILE" | sed -n 's/.*#[[:space:]]*//p')"
+      dim "        ${k:0:22}...  ${who:-unlabelled}"
+    done
+    if [ -n "$kf" ] && ! this_machine_is_recipient 2>/dev/null; then
+      red "  MISS  this machine's key is NOT a recipient"
+      dim "        it could seal secrets it can never reopen. Fix: devsync add-key"
+      ok=1
+    fi
+  else
+    red "  MISS  no recipients file ($RECIPIENTS_FILE)"
+    dim "        pull the dev-sync repo, then: devsync add-key"
     ok=1
   fi
 
@@ -456,15 +585,20 @@ devsync - move a repo between machines without losing work or secrets
   devsync init      set this repo up for sync   (once per repo)
   devsync handoff   park + push, before leaving a machine
   devsync resume    pull + unpack, on arriving at a machine
-  devsync doctor    check tooling and keys on this machine
+
+  devsync add-key   register THIS machine as a secrets recipient (once per machine)
+  devsync rekey     re-seal this repo's secrets after a machine was added
+  devsync doctor    check tooling, keys, and recipients on this machine
 EOF
 }
 
 case "${1:-}" in
-  init)    shift; cmd_init "$@" ;;
-  handoff) shift; cmd_handoff "$@" ;;
-  resume)  shift; cmd_resume "$@" ;;
-  doctor)  shift; cmd_doctor "$@" ;;
+  init)             shift; cmd_init "$@" ;;
+  handoff)          shift; cmd_handoff "$@" ;;
+  resume)           shift; cmd_resume "$@" ;;
+  add-key|addkey)   shift; cmd_addkey "$@" ;;
+  rekey)            shift; cmd_rekey "$@" ;;
+  doctor)           shift; cmd_doctor "$@" ;;
   ""|-h|--help|help) usage ;;
   *) die "unknown command '$1' (try: devsync help)" ;;
 esac

@@ -1,0 +1,16 @@
+# devsync recipients
+#
+# age PUBLIC keys — one per line, optional "# label" after the key.
+# Every secret is encrypted to ALL of these, so any listed machine can open it
+# with its own private key. No private key ever has to travel.
+#
+# Register a new machine (run it on that machine, then commit and push):
+#     devsync add-key
+#
+# After adding a machine, re-seal existing secrets so the new key can read them:
+#     devsync rekey        # per repo
+#
+# Public keys can only encrypt. They are safe to commit and safe to share.
+# The PRIVATE key lives only in keys.txt on each machine and never belongs here.
+
+age1du996lqtvw47gaqg5sasyx5pgftjeuju37xvn6wg7w74v95wlgtqgqqrpu  # desktop-8a09tel (Windows PC)

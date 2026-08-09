@@ -80,27 +80,46 @@ bash ~/dev-sync/install.sh
 That installs `sops` and `age` via Homebrew, and installs the three skills into
 `~/.claude/skills/`.
 
-Then **copy your age key across.** This is the one thing that cannot be
-automated, because it is the secret that protects every other secret:
+`install.sh` generates **that machine's own keypair** and registers its public
+key in `recipients.txt`. Push that change so the other machines learn it:
 
-| Machine | Key lives at |
-|---|---|
-| Windows | `%APPDATA%\sops\age\keys.txt` |
-| macOS   | `~/.config/sops/age/keys.txt` |
+```bash
+cd ~/dev-sync
+git add recipients.txt && git commit -m "recipients: add mac" && git push
+```
 
-Move it through a password manager's secure note, AirDrop, or a USB stick.
-Not email, not Slack, not a git repo.
+On your other machines, `git pull` in `~/dev-sync` to pick it up.
 
-Verify with:
+Verify:
 
 ```bash
 devsync doctor
 ```
 
-Your public key — safe to share, it can only *encrypt*:
+### Why no key ever has to travel
 
+Each machine holds its own private key, which never leaves it. Every secret is
+encrypted to **all** public keys in `recipients.txt`, so any registered machine
+opens it with its own key. There is no single key file to AirDrop, paste, or
+lose — and no moment where the thing protecting every one of your secrets is
+sitting in a chat window or a USB stick.
+
+`recipients.txt` holds only *public* keys. Those can encrypt but never decrypt,
+so committing them is safe.
+
+### Adding a machine later
+
+```bash
+devsync add-key      # on the new machine: generates + registers its key
+# commit and push recipients.txt, then pull it everywhere
 ```
-age1du996lqtvw47gaqg5sasyx5pgftjeuju37xvn6wg7w74v95wlgtqgqqrpu
+
+Repos set up *after* that need nothing. Repos that **already** have sealed
+secrets were encrypted to the old recipient list, so the new machine cannot
+read them until you re-seal — run this from a machine that can already decrypt:
+
+```bash
+devsync rekey        # per repo, then commit and push
 ```
 
 ---
