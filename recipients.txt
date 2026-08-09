@@ -14,3 +14,4 @@
 # The PRIVATE key lives only in keys.txt on each machine and never belongs here.
 
 age1du996lqtvw47gaqg5sasyx5pgftjeuju37xvn6wg7w74v95wlgtqgqqrpu  # desktop-8a09tel (Windows PC)
+age1ys8hz06zars58th29tk5grjwp4uwnxeqe7h6dyt33hjk6c9fhv3qt3zltt  # mac-book-5-local
