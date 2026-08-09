@@ -117,6 +117,17 @@ encrypted_files() {
   | grep -E '(^|/)\.env(\.[A-Za-z0-9_-]+)?\.sops$' || true
 }
 
+# Compare dotenv content, stdin vs file, ignoring what the sops dotenv store
+# normalizes away: blank lines and a missing trailing newline. A byte-exact
+# diff would report "changed" on every handoff, forever, for any .env that
+# contains a blank line.
+same_dotenv() {
+  local a b
+  a="$(grep -v '^[[:space:]]*$' "$1" 2>/dev/null)"
+  b="$(grep -v '^[[:space:]]*$')"
+  [ "$a" = "$b" ]
+}
+
 encrypt_secrets() {
   local pub changed=0 f
   pub="$(age_recipients)"
@@ -131,7 +142,7 @@ encrypt_secrets() {
     # sops output is nondeterministic, so comparing ciphertext would always
     # report a change and dirty the repo on every handoff.
     if [ -f "$out" ] && sops decrypt --input-type dotenv --output-type dotenv "$out" 2>/dev/null \
-         | diff -q - "$f" >/dev/null 2>&1; then
+         | same_dotenv "$f"; then
       continue
     fi
     sops encrypt --input-type dotenv --output-type dotenv --age "$pub" "$f" > "$out.tmp" \
@@ -148,7 +159,7 @@ decrypt_secrets() {
   while IFS= read -r f; do
     local plain="${f%.sops}"
     if [ -f "$plain" ] && sops decrypt --input-type dotenv --output-type dotenv "$f" 2>/dev/null \
-         | diff -q - "$plain" >/dev/null 2>&1; then
+         | same_dotenv "$plain"; then
       dim "  unchanged  $plain"
       continue
     fi
