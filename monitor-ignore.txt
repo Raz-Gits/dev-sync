@@ -1,0 +1,6 @@
+# monitor.sh ignore rules - one per line, substring match on the repo path
+# relative to the scanned root.
+#
+#   repo:<substring>      skip the repo entirely
+#   secrets:<substring>   skip only the secret checks (repo deliberately unbridged)
+#   stash:<substring>     skip only the stash check (stash kept on purpose)
