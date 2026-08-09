@@ -265,6 +265,14 @@ cmd_handoff() {
 
   encrypt_secrets
 
+  # Fail-safe: never commit a plaintext secret. If a .env is not gitignored,
+  # init never ran here and the 'git add -A' below would publish it to GitHub.
+  local f
+  while IFS= read -r f; do
+    git check-ignore -q "$f" 2>/dev/null \
+      || die "plaintext '$f' is not gitignored - run 'devsync init' (/sync-setup) in this repo first"
+  done < <(secret_files)
+
   git add -A
 
   if git diff --cached --quiet; then
