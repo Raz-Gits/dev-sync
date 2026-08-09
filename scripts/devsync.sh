@@ -586,12 +586,17 @@ cmd_doctor() {
   # Roundtrip: prove sops can actually encrypt AND decrypt with this machine's
   # key. Catches path-resolution mismatches that existence checks cannot.
   if [ -n "$kf" ] && command -v sops >/dev/null 2>&1; then
-    local tmp; tmp="${TMPDIR:-/tmp}/devsync-doctor-$$.env"
+    local tmp enc
+    tmp="${TMPDIR:-/tmp}/devsync-doctor-$$.env"
+    enc="$tmp.sops"
     printf 'DEVSYNC_DOCTOR=ok\n' > "$tmp"
+    # Decrypt from a real file, never /dev/stdin: sops is a native binary and
+    # under Git Bash it resolves /dev/stdin to C:\proc\self\fd\0, which does
+    # not exist. That made this check fail on Windows even though sops worked.
     if sops encrypt --input-type dotenv --output-type dotenv \
-         --age "$(age-keygen -y "$kf" 2>/dev/null | head -n1)" "$tmp" 2>/dev/null \
-       | sops decrypt --input-type dotenv --output-type dotenv /dev/stdin 2>/dev/null \
-       | grep -q 'DEVSYNC_DOCTOR=ok'; then
+         --age "$(age-keygen -y "$kf" 2>/dev/null | head -n1)" "$tmp" > "$enc" 2>/dev/null \
+       && sops decrypt --input-type dotenv --output-type dotenv "$enc" 2>/dev/null \
+          | grep -q 'DEVSYNC_DOCTOR=ok'; then
       grn "  ok    encrypt/decrypt roundtrip"
     else
       red "  MISS  sops cannot complete an encrypt/decrypt roundtrip"
@@ -599,7 +604,7 @@ cmd_doctor() {
       dim "        expected: SOPS_AGE_KEY_FILE=$kf"
       ok=1
     fi
-    rm -f "$tmp"
+    rm -f "$tmp" "$enc"
   fi
 
   if git rev-parse --show-toplevel >/dev/null 2>&1; then
