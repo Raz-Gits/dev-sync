@@ -67,22 +67,31 @@ age_pubkey() {
 # Every plaintext secret file we manage, and its encrypted twin.
 # .env -> .env.sops, .env.local -> .env.local.sops, and so on.
 secret_files() {
-  # Only top-level env files. Nested ones are almost always inside deps.
+  # Recursive: monorepos keep .env files in subdirectories (apps/web/.env).
+  # Prunes dependency trees so we never seal a package's bundled .env.
   # Excludes .example (a template, meant to be committed) and .sops (already
   # sealed - encrypting it again would produce .env.sops.sops and then fail).
-  ls -1a 2>/dev/null \
-    | grep -E '^\.env(\.[A-Za-z0-9_-]+)?$' \
-    | grep -vE '\.(example|sample|template|sops|bak-devsync)$' || true
+  find . \( -name node_modules -o -name .venv -o -name venv -o -name .git \
+            -o -name vendor -o -name .cache -o -name __pycache__ \) -prune -o \
+    -type f -name '.env*' -print 2>/dev/null \
+  | sed 's|^\./||' \
+  | grep -E '(^|/)\.env(\.[A-Za-z0-9_-]+)?$' \
+  | grep -vE '\.(example|sample|template|sops|bak-devsync)$' || true
 }
 
 encrypted_files() {
-  ls -1a 2>/dev/null | grep -E '^\.env(\.[A-Za-z0-9_-]+)?\.sops$' || true
+  find . \( -name node_modules -o -name .venv -o -name venv -o -name .git \
+            -o -name vendor -o -name .cache -o -name __pycache__ \) -prune -o \
+    -type f -name '.env*.sops' -print 2>/dev/null \
+  | sed 's|^\./||' \
+  | grep -E '(^|/)\.env(\.[A-Za-z0-9_-]+)?\.sops$' || true
 }
 
 encrypt_secrets() {
   local pub changed=0 f
   pub="$(age_pubkey)"
-  for f in $(secret_files); do
+  # while-read, not for-in: paths may contain spaces
+  while IFS= read -r f; do
     local out="$f.sops"
     # Re-encrypt only when the plaintext differs from what's already sealed;
     # sops output is nondeterministic, so comparing ciphertext would always
@@ -96,13 +105,13 @@ encrypt_secrets() {
     mv "$out.tmp" "$out"
     grn "  sealed  $f -> $out"
     changed=1
-  done
+  done < <(secret_files)
   return 0
 }
 
 decrypt_secrets() {
   local f
-  for f in $(encrypted_files); do
+  while IFS= read -r f; do
     local plain="${f%.sops}"
     if [ -f "$plain" ] && sops decrypt --input-type dotenv --output-type dotenv "$f" 2>/dev/null \
          | diff -q - "$plain" >/dev/null 2>&1; then
@@ -117,7 +126,7 @@ decrypt_secrets() {
       || { rm -f "$plain.tmp"; die "failed to decrypt $f - is your age key on this machine?"; }
     mv "$plain.tmp" "$plain"
     grn "  opened  $f -> $plain"
-  done
+  done < <(encrypted_files)
 }
 
 # ------------------------------------------------------- unsynced warning ----
@@ -127,7 +136,9 @@ decrypt_secrets() {
 # ignored file would just print node_modules forever.
 report_unsynced() {
   local found=0 f
-  for f in $(git status --ignored --porcelain 2>/dev/null | sed -n 's/^!! //p'); do
+  # NUL-delimited: git status quotes paths containing spaces, which used to
+  # word-split into garbage here. ls-files -z gives raw paths.
+  while IFS= read -r -d '' f; do
     case "$f" in
       node_modules/*|node_modules|*/node_modules/*) continue ;;
       .venv/*|.venv|venv/*|__pycache__/*|.next/*|dist/*|build/*|.turbo/*) continue ;;
@@ -141,7 +152,7 @@ report_unsynced() {
         printf '    %s\n' "$f"
         ;;
     esac
-  done
+  done < <(git ls-files --others --ignored --exclude-standard -z 2>/dev/null)
   if [ "$found" -eq 1 ]; then
     dim "    ^ if any of these matter, add them as .env* so devsync can seal them"
   fi
@@ -215,13 +226,13 @@ EOF
   # 5b. Adding a path to .gitignore does nothing if git already tracks it.
   #     Untrack any plaintext secret so future commits stop carrying it.
   local leaked=0 f
-  for f in $(secret_files); do
+  while IFS= read -r f; do
     if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
       git rm --cached --quiet "$f"
       yel "  untracked $f (it was committed in plaintext)"
       leaked=1
     fi
-  done
+  done < <(secret_files)
   if [ "$leaked" -eq 1 ]; then
     red "  NOTE: past commits still contain that plaintext in history."
     red "  Untracking stops the bleeding; it does not erase the past."
