@@ -39,6 +39,24 @@ if [ "$status" -eq 1 ]; then
   [ -n "$summary" ] || summary="bridge needs attention"
   if [ "$OS" = "mac" ]; then
     osascript -e "display notification \"${summary} Report: ~/Library/Logs/devsync-monitor.log\" with title \"devsync monitor\" sound name \"Ping\"" 2>/dev/null || true
+  elif [ "$OS" = "windows" ]; then
+    # Balloon tip via NotifyIcon: works on a stock Windows box with no extra
+    # PowerShell modules (BurntToast and friends are not installed by default).
+    # Backgrounded and fully swallowed - a missing notification must never turn
+    # a healthy sweep into a failed scheduled task.
+    _msg="$(printf '%s' "$summary" | sed "s/'/''/g")"
+    powershell -NoProfile -NonInteractive -Command "
+      Add-Type -AssemblyName System.Windows.Forms;
+      Add-Type -AssemblyName System.Drawing;
+      \$n = New-Object System.Windows.Forms.NotifyIcon;
+      \$n.Icon = [System.Drawing.SystemIcons]::Warning;
+      \$n.BalloonTipTitle = 'devsync monitor';
+      \$n.BalloonTipText = '${_msg} — see ~/devsync-monitor.log';
+      \$n.Visible = \$true;
+      \$n.ShowBalloonTip(15000);
+      Start-Sleep -Seconds 16;
+      \$n.Dispose();
+    " >/dev/null 2>&1 &
   fi
 fi
 
