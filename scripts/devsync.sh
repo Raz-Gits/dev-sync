@@ -62,6 +62,13 @@ age_pubkey() {
   age-keygen -y "$kf" 2>/dev/null | head -n1
 }
 
+# sops resolves the default key location with Go's os.UserConfigDir(), which on
+# macOS is ~/Library/Application Support - NOT the ~/.config path this tooling
+# writes to. Windows agrees on %APPDATA% by luck. Export the resolved path so
+# sops decrypts with the same key that doctor reports, on every platform.
+_devsync_kf="$(age_key_file)"
+[ -n "$_devsync_kf" ] && export SOPS_AGE_KEY_FILE="$_devsync_kf"
+
 # Where devsync itself lives, so we can find the shared recipient list.
 DEVSYNC_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RECIPIENTS_FILE="${DEVSYNC_RECIPIENTS:-$DEVSYNC_HOME/recipients.txt}"
@@ -563,6 +570,25 @@ cmd_doctor() {
     red "  MISS  no recipients file ($RECIPIENTS_FILE)"
     dim "        pull the dev-sync repo, then: devsync add-key"
     ok=1
+  fi
+
+  # Roundtrip: prove sops can actually encrypt AND decrypt with this machine's
+  # key. Catches path-resolution mismatches that existence checks cannot.
+  if [ -n "$kf" ] && command -v sops >/dev/null 2>&1; then
+    local tmp; tmp="${TMPDIR:-/tmp}/devsync-doctor-$$.env"
+    printf 'DEVSYNC_DOCTOR=ok\n' > "$tmp"
+    if sops encrypt --input-type dotenv --output-type dotenv \
+         --age "$(age-keygen -y "$kf" 2>/dev/null | head -n1)" "$tmp" 2>/dev/null \
+       | sops decrypt --input-type dotenv --output-type dotenv /dev/stdin 2>/dev/null \
+       | grep -q 'DEVSYNC_DOCTOR=ok'; then
+      grn "  ok    encrypt/decrypt roundtrip"
+    else
+      red "  MISS  sops cannot complete an encrypt/decrypt roundtrip"
+      dim "        sops may be looking for the key somewhere else."
+      dim "        expected: SOPS_AGE_KEY_FILE=$kf"
+      ok=1
+    fi
+    rm -f "$tmp"
   fi
 
   if git rev-parse --show-toplevel >/dev/null 2>&1; then
