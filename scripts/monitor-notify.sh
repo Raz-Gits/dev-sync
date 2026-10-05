@@ -51,7 +51,7 @@ if [ "$status" -eq 1 ]; then
       \$n = New-Object System.Windows.Forms.NotifyIcon;
       \$n.Icon = [System.Drawing.SystemIcons]::Warning;
       \$n.BalloonTipTitle = 'devsync monitor';
-      \$n.BalloonTipText = '${_msg} — see ~/devsync-monitor.log';
+      \$n.BalloonTipText = '${_msg}. See ~/devsync-monitor.log';
       \$n.Visible = \$true;
       \$n.ShowBalloonTip(15000);
       Start-Sleep -Seconds 16;

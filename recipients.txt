@@ -1,6 +1,6 @@
 # devsync recipients
 #
-# age PUBLIC keys — one per line, optional "# label" after the key.
+# age PUBLIC keys, one per line, optional "# label" after the key.
 # Every secret is encrypted to ALL of these, so any listed machine can open it
 # with its own private key. No private key ever has to travel.
 #

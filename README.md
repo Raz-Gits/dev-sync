@@ -41,7 +41,7 @@ Run this **once**, right after `git init` or your first clone:
 ```
 
 Then commit what it changed. Do this **before** your first `/handoff` in that
-repo — otherwise your `.env` will not travel and you will get plaintext
+repo. Otherwise your `.env` will not travel and you will get plaintext
 secrets committed by accident.
 
 Order for a brand new project:
@@ -101,7 +101,7 @@ devsync doctor
 Each machine holds its own private key, which never leaves it. Every secret is
 encrypted to **all** public keys in `recipients.txt`, so any registered machine
 opens it with its own key. There is no single key file to AirDrop, paste, or
-lose — and no moment where the thing protecting every one of your secrets is
+lose, and no moment where the thing protecting every one of your secrets is
 sitting in a chat window or a USB stick.
 
 `recipients.txt` holds only *public* keys. Those can encrypt but never decrypt,
@@ -116,7 +116,7 @@ devsync add-key      # on the new machine: generates + registers its key
 
 Repos set up *after* that need nothing. Repos that **already** have sealed
 secrets were encrypted to the old recipient list, so the new machine cannot
-read them until you re-seal — run this from a machine that can already decrypt:
+read them until you re-seal. Run this from a machine that can already decrypt:
 
 ```bash
 devsync rekey        # per repo, then commit and push
@@ -167,17 +167,17 @@ specific, boring ways:
 
 ## Troubleshooting
 
-**"branch diverged"** — both machines have real commits. `/resume` stops and
+**"branch diverged"**: both machines have real commits. `/resume` stops and
 changes nothing. Look at `git log --oneline --graph HEAD origin/main` and merge
 or rebase by hand. This is the one case that needs a human.
 
-**"failed to decrypt"** — this machine does not have the age key. See the
+**"failed to decrypt"**: this machine does not have the age key. See the
 setup section above.
 
-**"push rejected and origin is real work"** — the script is refusing to force
+**"push rejected and origin is real work"**: the script is refusing to force
 over something that is not a parked commit. Run `git pull --rebase`, then
 `/handoff` again.
 
-**Decryption suddenly fails on Windows** — check `.gitattributes` still has
+**Decryption suddenly fails on Windows**: check `.gitattributes` still has
 `*.sops -text`. Without it, git converts the encrypted file to CRLF and sops
 cannot parse its timestamp.

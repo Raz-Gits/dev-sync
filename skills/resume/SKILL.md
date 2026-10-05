@@ -9,7 +9,7 @@ Pick up where the other machine left off.
 
 ## Run it
 
-Use the **Bash** tool (not PowerShell — the script is bash and must run under
+Use the **Bash** tool (not PowerShell: the script is bash and must run under
 Git Bash on Windows):
 
 ```bash
@@ -22,7 +22,7 @@ clone it first with `gh repo clone Raz-Gits/<name>`, then run resume.
 
 ## What it does
 
-1. Refuses to run if there are uncommitted local changes — those must be
+1. Refuses to run if there are uncommitted local changes. Those must be
    handed off first, or the pull would clobber them
 2. Drops this machine's stale parked commit, but only when doing so leaves the
    branch fast-forwardable (never discards real unpushed work)
@@ -38,10 +38,10 @@ clone it first with `gh repo clone Raz-Gits/<name>`, then run resume.
 
 Relay the output. Act on these:
 
-- **"branch diverged"** — resume stopped and changed nothing. Both machines
+- **"branch diverged"**: resume stopped and changed nothing. Both machines
   have real commits. Show the user `git log --oneline --graph HEAD origin/<br>`
   and help them reconcile; do not force anything.
-- **"dependency lockfile changed"** — offer to run the printed install command.
+- **"dependency lockfile changed"**: offer to run the printed install command.
   This matters most crossing macOS↔Windows, where native binaries differ.
-- **decryption failed** — this machine is missing the age key. The fix is
+- **decryption failed**: this machine is missing the age key. The fix is
   copying `keys.txt` from the other machine (see `~/dev-sync/README.md`).
