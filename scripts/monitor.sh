@@ -12,7 +12,8 @@
 # Exit 0 = all clear. Exit 1 = at least one repo needs attention.
 # Read-only. Changes nothing, anywhere.
 #
-# Ignore rules live in ../monitor-ignore.txt (see comments there). Lines:
+# Ignore rules live in ../monitor-ignore.txt (shared) and ../monitor-ignore.local.txt
+# (this machine only, not tracked by git). Lines:
 #   repo:<substring>      skip a repo entirely
 #   secrets:<substring>   skip only the secret checks for a repo
 #   stash:<substring>     skip only the stash check for a repo
@@ -31,7 +32,6 @@ ROOT="${1:-$HOME}"
 [ -d "$ROOT" ] || { red "not a directory: $ROOT"; exit 2; }
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IGNORE_FILE="$HERE/../monitor-ignore.txt"
 
 # sops resolves its default key via Go os.UserConfigDir() (~/Library/Application
 # Support on macOS), not ~/.config. Point it at the key devsync manages.
@@ -43,16 +43,18 @@ if [ -z "${SOPS_AGE_KEY_FILE:-}" ]; then
 fi
 
 ignored() {  # $1 = rule prefix, $2 = repo display name
-  local prefix="$1" name="$2" line pat
-  [ -f "$IGNORE_FILE" ] || return 1
-  while IFS= read -r line; do
-    case "$line" in
-      \#*|'') continue ;;
-      "$prefix":*)
-        pat="${line#"$prefix":}"
-        case "$name" in *"$pat"*) return 0 ;; esac ;;
-    esac
-  done < "$IGNORE_FILE"
+  local prefix="$1" name="$2" line pat f
+  for f in "$HERE/../monitor-ignore.txt" "$HERE/../monitor-ignore.local.txt"; do
+    [ -f "$f" ] || continue
+    while IFS= read -r line; do
+      case "$line" in
+        \#*|'') continue ;;
+        "$prefix":*)
+          pat="${line#"$prefix":}"
+          case "$name" in *"$pat"*) return 0 ;; esac ;;
+      esac
+    done < "$f"
+  done
   return 1
 }
 

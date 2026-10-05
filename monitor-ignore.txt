@@ -4,3 +4,6 @@
 #   repo:<substring>      skip the repo entirely
 #   secrets:<substring>   skip only the secret checks (repo deliberately unbridged)
 #   stash:<substring>     skip only the stash check (stash kept on purpose)
+#
+# Rules that name your own repos belong in monitor-ignore.local.txt next to this
+# file. Same format, read after this one, and git never tracks it.
