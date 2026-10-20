@@ -61,6 +61,16 @@ if need sops || need age-keygen; then
 fi
 grn "  tooling present: sops, age"
 
+# gitleaks guards the Obsidian vault's commits. Optional: without it the vault
+# still syncs, it just isn't checked for secrets.
+if need gitleaks; then
+  case "$OS" in
+    mac) command -v brew >/dev/null 2>&1 && brew install gitleaks ;;
+    windows) yel "  gitleaks missing (vault secret check). In PowerShell: winget install gitleaks" ;;
+    *) yel "  gitleaks missing (vault secret check). Install it with your package manager." ;;
+  esac
+fi
+
 # --------------------------------------------------------------- 2. skills ----
 
 mkdir -p "$SKILLS_DIR"
@@ -106,7 +116,25 @@ EOF
 chmod +x "$BIN_DIR/devsync"
 grn "  installed 'devsync' command"
 
-# ------------------------------------------------------------------- 4. key ----
+# ----------------------------------------------------------------- 4. vault ----
+
+# The Obsidian vault travels with every handoff/resume. Clone it if this
+# machine doesn't have it yet, then apply its per-clone git settings.
+VAULT="${DEVSYNC_VAULT:-$HOME/Main Brain}"
+VAULT_REPO="${DEVSYNC_VAULT_REPO:-Raz-Gits/main-brain}"
+echo
+if [ -d "$VAULT/.git" ]; then
+  grn "  vault present: $VAULT"
+elif { command -v gh >/dev/null 2>&1 && gh repo clone "$VAULT_REPO" "$VAULT" -- --quiet; } \
+     || git clone --quiet "https://github.com/$VAULT_REPO.git" "$VAULT"; then
+  grn "  cloned vault to $VAULT"
+  dim "    in Obsidian: Open folder as vault -> $VAULT -> Trust author and enable plugins"
+else
+  yel "  could not clone the vault ($VAULT_REPO) - clone it by hand, then re-run"
+fi
+[ -f "$VAULT/scripts/setup-machine.sh" ] && bash "$VAULT/scripts/setup-machine.sh" | sed 's/^/    /'
+
+# ------------------------------------------------------------------- 5. key ----
 
 KEY_MAC="$HOME/.config/sops/age/keys.txt"
 KEY_WIN="${APPDATA:-$HOME/AppData/Roaming}/sops/age/keys.txt"

@@ -34,6 +34,10 @@ clone it first with `gh repo clone Raz-Gits/<name>`, then run resume.
 6. Compares dependency lockfiles before and after, and prints the exact
    reinstall command if they changed
 
+Before all of that it syncs the Obsidian vault (`~/Main Brain`, or
+`$DEVSYNC_VAULT`): commits local note edits, pulls, pushes. Run from inside the
+vault itself, that is all it does. A vault failure never stops the resume.
+
 ## Reporting back
 
 Relay the output. Act on these:

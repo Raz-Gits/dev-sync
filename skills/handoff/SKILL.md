@@ -30,6 +30,11 @@ not a git repo, ask which repo they mean rather than guessing.
    parked commit, never real work
 5. Reports any ignored files that did not travel (stray keys, local databases)
 
+Before all of that it syncs the Obsidian vault (`~/Main Brain`, or
+`$DEVSYNC_VAULT`): commits any changed notes as a normal `vault:` commit (never
+a parked one), pulls, pushes. Run from inside the vault itself, that is all it
+does.
+
 ## Reporting back
 
 Relay the script's output plainly. Two things always deserve a callout:
@@ -37,6 +42,10 @@ Relay the script's output plainly. Two things always deserve a callout:
 - Anything under "not carried over": those files exist only on this machine
 - A push that was refused means the branch has real remote work; the user
   needs `git pull --rebase` first, and the script deliberately will not force
+- Any `vault:` line in red. "commit blocked" means the vault's gitleaks hook
+  found a secret in a note: find it with `gitleaks git --pre-commit --staged -v`
+  in the vault and remove it. A failed pull or push is left for the Obsidian
+  Git plugin to retry; the code handoff still went through.
 
 If the repo has never been set up, the script still works but secrets will not
 travel. Suggest `/sync-setup` in that case.

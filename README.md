@@ -30,6 +30,9 @@ Pulls, puts your half-finished work back exactly as it was, decrypts your
 That's the whole loop. You do not need to commit properly, write a message, or
 remember what you were doing. Park it and go.
 
+Both commands also sync your **Obsidian vault** (`~/Main Brain`), so one habit
+covers code and notes. See [Your Obsidian vault](#your-obsidian-vault).
+
 ---
 
 ## When you start a new repo
@@ -133,9 +136,36 @@ devsync rekey        # per repo, then commit and push
 | `.env` secrets | yes | encrypted to `.env.sops`, committed, decrypted on arrival |
 | `node_modules`, `.venv` | **no, deliberately** | contains OS-native binaries; reinstall from the lockfile |
 | Local databases, `*.pem`, stray keys | no | `/handoff` lists these so you know they stayed behind |
+| Obsidian notes (`~/Main Brain`) | yes | real commits on every handoff/resume, plus the Obsidian Git plugin |
 
 If something in that last row matters, rename it to `.env.something` and
 devsync will seal and carry it.
+
+---
+
+## Your Obsidian vault
+
+The vault at `~/Main Brain` is its own private repo,
+[Raz-Gits/main-brain](https://github.com/Raz-Gits/main-brain). It syncs two
+ways, and you don't have to think about either:
+
+- **While Obsidian is open**, the Obsidian Git plugin pulls on launch and every
+  5 minutes, and pushes 5 minutes after you stop typing.
+- **On every `/handoff` and `/resume`**, in any repo, devsync commits changed
+  notes, pulls and pushes first. That covers notes edited with Obsidian
+  closed (e.g. by Claude Code) and a laptop shut before the plugin pushed.
+
+Notes get ordinary `vault: <machine> <time>` commits, never parked ones, since
+they're always safe to commit. Running `/handoff` or `/resume` from inside the
+vault does only the vault sync. A vault problem prints a red `vault:` line but
+never blocks the code handoff.
+
+The vault has a gitleaks pre-commit hook, so a secret pasted into a note
+blocks the commit. `install.sh` installs gitleaks (on Windows it prints the
+winget command), clones the vault if it's missing, and runs the vault's
+`scripts/setup-machine.sh`, which turns that hook on for the clone.
+
+Use a different location or repo with `DEVSYNC_VAULT` and `DEVSYNC_VAULT_REPO`.
 
 ---
 

@@ -5,6 +5,7 @@
 #   devsync init      set this repo up for cross-machine sync (run once per repo)
 #   devsync handoff   park everything and push it, before you leave a machine
 #   devsync resume    pick everything up, when you arrive at a machine
+#                     (both also sync the Obsidian vault, ~/Main Brain)
 #   devsync doctor    check that this machine has the tooling and keys
 #
 # Works on macOS and on Windows under Git Bash. Keep it bash-3.2 compatible
@@ -72,6 +73,11 @@ _devsync_kf="$(age_key_file)"
 # Where devsync itself lives, so we can find the shared recipient list.
 DEVSYNC_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RECIPIENTS_FILE="${DEVSYNC_RECIPIENTS:-$DEVSYNC_HOME/recipients.txt}"
+
+# The Obsidian vault rides along with every handoff and resume. It syncs itself
+# while Obsidian is open (Obsidian Git plugin); this covers the gaps: notes
+# edited with Obsidian closed, or the laptop shut before the plugin pushed.
+VAULT_DIR="${DEVSYNC_VAULT:-$HOME/Main Brain}"
 
 # Every machine's PUBLIC key. Secrets are encrypted to all of them, so each
 # machine opens them with its own private key and no private key ever travels.
@@ -297,10 +303,52 @@ EOF
   grn "ready. commit these changes, then use: devsync handoff / devsync resume"
 }
 
+# ----------------------------------------------------------------- vault ----
+
+is_vault() {  # $1 = repo root
+  [ -d "$VAULT_DIR/.git" ] \
+    && [ "$(cd "$1" && pwd -P)" = "$(cd "$VAULT_DIR" && pwd -P)" ]
+}
+
+# Notes are always safe to commit, so the vault gets real commits, never a
+# parked one. Never fails the caller: by the time this runs the code side is
+# what matters, so a vault problem is reported and left for Obsidian to fix.
+sync_vault() {
+  [ -d "$VAULT_DIR/.git" ] || return 0
+  (
+    cd "$VAULT_DIR" || exit 1
+    git remote get-url origin >/dev/null 2>&1 \
+      || { yel "  vault: no 'origin' remote, skipped"; exit 0; }
+    [ "$(git config core.hooksPath)" = ".githooks" ] \
+      || yel "  vault: secret check not set up here - run: bash \"$VAULT_DIR/scripts/setup-machine.sh\""
+
+    git add -A
+    if ! git diff --cached --quiet; then
+      git commit --quiet -m "vault: $(machine_name) $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        || { red "  vault: commit blocked (secret in a note?) - fix it in Obsidian, then hand off again"; exit 1; }
+    fi
+
+    if ! git pull --quiet --no-rebase --no-edit origin "$(branch_name)" 2>/dev/null; then
+      git merge --abort 2>/dev/null || true
+      red "  vault: pull failed or conflicted - nothing changed; open Obsidian and sync there"
+      exit 1
+    fi
+    git push --quiet origin HEAD 2>/dev/null \
+      || { red "  vault: push failed - Obsidian will retry when it's open"; exit 1; }
+    grn "  vault synced ($(basename "$VAULT_DIR"))"
+  ) || true
+}
+
 # --------------------------------------------------------------- handoff ----
 
 cmd_handoff() {
   local root; root="$(repo_root)"; cd "$root"
+  if is_vault "$root"; then
+    bold "devsync handoff - vault $(basename "$root")"
+    sync_vault
+    return 0
+  fi
+
   local br mach stamp
   br="$(branch_name)"; mach="$(machine_name)"
   stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -308,6 +356,9 @@ cmd_handoff() {
   bold "devsync handoff - $(basename "$root") [$br] from $mach"
 
   [ "$br" = "HEAD" ] && die "detached HEAD; checkout a branch first"
+
+  # First, so the notes travel even if the code push below is refused.
+  sync_vault
 
   encrypt_secrets
 
@@ -376,8 +427,17 @@ cmd_handoff() {
 
 cmd_resume() {
   local root; root="$(repo_root)"; cd "$root"
+  if is_vault "$root"; then
+    bold "devsync resume - vault $(basename "$root")"
+    sync_vault
+    return 0
+  fi
+
   local br mach; br="$(branch_name)"; mach="$(machine_name)"
   bold "devsync resume - $(basename "$root") [$br] on $mach"
+
+  # First, so the notes are current even if the code resume stops below.
+  sync_vault
 
   if ! git remote get-url origin >/dev/null 2>&1; then
     die "no 'origin' remote to resume from"
