@@ -137,6 +137,7 @@ devsync rekey        # per repo, then commit and push
 | `node_modules`, `.venv` | **no, deliberately** | contains OS-native binaries; reinstall from the lockfile |
 | Local databases, `*.pem`, stray keys | no | `/handoff` lists these so you know they stayed behind |
 | Obsidian notes (`~/Main Brain`) | yes | real commits on every handoff/resume, plus the Obsidian Git plugin |
+| Code graphs (`graphify-out/`) | **no, deliberately** | rebuilt by `/resume` on each machine in seconds; globally gitignored |
 
 If something in that last row matters, rename it to `.env.something` and
 devsync will seal and carry it.
@@ -166,6 +167,32 @@ winget command), clones the vault if it's missing, and runs the vault's
 `scripts/setup-machine.sh`, which turns that hook on for the clone.
 
 Use a different location or repo with `DEVSYNC_VAULT` and `DEVSYNC_VAULT_REPO`.
+
+---
+
+## Code graphs (graphify)
+
+Big repos get a [graphify](https://pypi.org/project/graphifyy/) code graph in
+`graphify-out/`, which Claude uses to answer "how does X reach Y" without
+re-reading the whole codebase.
+
+Graphs **don't travel; they're rebuilt.** The code-only build is free (no AI
+credits), deterministic, and takes a few seconds, so each machine makes its own:
+
+- `/resume` refreshes the graph after pulling, so it always matches the code
+  you're about to work on
+- A repo gets a graph when it already has `graphify-out/` on this machine, or
+  its vault note has `graph: true`. Flip that property in Obsidian to add a
+  repo on both machines at once
+- `devsync graph` builds or refreshes one by hand
+
+What syncs is the human-readable part: each project's **How it works** section
+in the vault (big picture, main parts, where to start reading), written from
+the graph.
+
+`install.sh` installs the same graphify version on every machine (pinned in
+`GRAPHIFY_VERSION`) plus its Claude skill, and adds `graphify-out/` to the
+global git ignore, so a `/handoff` can never commit a graph.
 
 ---
 

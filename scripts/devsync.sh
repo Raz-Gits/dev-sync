@@ -5,7 +5,9 @@
 #   devsync init      set this repo up for cross-machine sync (run once per repo)
 #   devsync handoff   park everything and push it, before you leave a machine
 #   devsync resume    pick everything up, when you arrive at a machine
-#                     (both also sync the Obsidian vault, ~/Main Brain)
+#                     (both also sync the Obsidian vault, ~/Main Brain;
+#                      resume also rebuilds the repo's graphify code graph)
+#   devsync graph     build or refresh this repo's code graph by hand
 #   devsync doctor    check that this machine has the tooling and keys
 #
 # Works on macOS and on Windows under Git Bash. Keep it bash-3.2 compatible
@@ -339,6 +341,60 @@ sync_vault() {
   ) || true
 }
 
+# ----------------------------------------------------------------- graph ----
+
+# graphify code graphs are rebuilt on each machine instead of travelling: the
+# code-only build is deterministic, free and takes seconds, so there is nothing
+# to sync and no multi-MB graph.json churning through history. A repo gets one
+# when it already has graphify-out/ here, or its vault note says `graph: true`.
+
+repo_slug() {
+  git remote get-url origin 2>/dev/null \
+    | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##'
+}
+
+vault_wants_graph() {
+  local slug f; slug="$(repo_slug)"
+  [ -n "$slug" ] && [ -d "$VAULT_DIR/Projects" ] || return 1
+  for f in "$VAULT_DIR"/Projects/*.md; do
+    [ -f "$f" ] || continue
+    # Matches repo:, lander_repo:, and any other *repo: property.
+    grep -qE "^[a-z_]*repo: ${slug//./\\.}\$" "$f" && grep -qx 'graph: true' "$f" && return 0
+  done
+  return 1
+}
+
+refresh_graph() {  # $1 = auto (resume: opted-in repos only) | force
+  if ! command -v graphify >/dev/null 2>&1; then
+    [ "$1" = force ] && yel "  graph: graphify is not installed - see ~/dev-sync/install.sh"
+    return 0
+  fi
+  if [ "$1" != force ] && [ ! -d graphify-out ] && ! vault_wants_graph; then
+    return 0
+  fi
+  # Never let a graph ride into a parked commit.
+  if [ -n "$(git ls-files graphify-out 2>/dev/null | head -1)" ]; then
+    yel "  graph: graphify-out/ is tracked by git here, skipped. Untrack it once with:"
+    dim "    git rm -r --cached graphify-out"
+    return 0
+  fi
+  if ! git check-ignore -q graphify-out/ 2>/dev/null; then
+    yel "  graph: graphify-out/ is not gitignored here, skipped (re-run ~/dev-sync/install.sh)"
+    return 0
+  fi
+  if graphify update . >/dev/null 2>&1; then
+    grn "  code graph updated (graphify-out/)"
+  else
+    yel "  graph: update failed - run 'graphify update .' to see why"
+  fi
+}
+
+cmd_graph() {
+  local root; root="$(repo_root)"; cd "$root"
+  bold "devsync graph - $(basename "$root")"
+  refresh_graph force
+}
+
 # --------------------------------------------------------------- handoff ----
 
 cmd_handoff() {
@@ -495,6 +551,7 @@ cmd_resume() {
   esac
 
   decrypt_secrets
+  refresh_graph auto
 
   local lock_after; lock_after="$(git_lockfile_hashes)"
   if [ "$lock_before" != "$lock_after" ]; then
@@ -687,6 +744,7 @@ devsync - move a repo between machines without losing work or secrets
   devsync init      set this repo up for sync   (once per repo)
   devsync handoff   park + push, before leaving a machine
   devsync resume    pull + unpack, on arriving at a machine
+  devsync graph     build or refresh this repo's graphify code graph
 
   devsync add-key   register THIS machine as a secrets recipient (once per machine)
   devsync rekey     re-seal this repo's secrets after a machine was added
@@ -698,6 +756,7 @@ case "${1:-}" in
   init)             shift; cmd_init "$@" ;;
   handoff)          shift; cmd_handoff "$@" ;;
   resume)           shift; cmd_resume "$@" ;;
+  graph)            shift; cmd_graph "$@" ;;
   add-key|addkey)   shift; cmd_addkey "$@" ;;
   rekey)            shift; cmd_rekey "$@" ;;
   doctor)           shift; cmd_doctor "$@" ;;

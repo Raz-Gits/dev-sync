@@ -38,6 +38,12 @@ Before all of that it syncs the Obsidian vault (`~/Main Brain`, or
 `$DEVSYNC_VAULT`): commits local note edits, pulls, pushes. Run from inside the
 vault itself, that is all it does. A vault failure never stops the resume.
 
+After decrypting, it refreshes the repo's graphify code graph (`graphify-out/`,
+free and a few seconds) if the repo already has one here or its vault note has
+`graph: true`. Graphs are rebuilt per machine and never committed. Relay any
+`graph:` warning; "tracked by git" means run `git rm -r --cached graphify-out`
+once in that repo.
+
 ## Reporting back
 
 Relay the output. Act on these:
