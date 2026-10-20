@@ -25,6 +25,17 @@ mkdir -p "$(dirname "$LOG")"
 report="$(bash "$HERE/monitor.sh" "${1:-$HOME}" 2>&1)"
 status=$?
 
+# Security sweep: new secrets in any repo, credential files lying around,
+# GitHub visibility/Dependabot changes. It writes the vault's Security report;
+# non-zero means something new needs a look.
+sec="$(bash "$HERE/devsync.sh" secscan 2>&1)"
+sec_status=$?
+report="${report}
+
+${sec}"
+# 1 = something new needs a look; 3 = skipped (tooling missing on this machine).
+[ "$sec_status" -eq 1 ] && [ "$status" -eq 0 ] && status=1
+
 # Log without ANSI colors, newest entry last; keep the file from growing forever.
 esc="$(printf '\033')"
 clean="$(printf '%s\n' "$report" | sed "s/${esc}\[[0-9;]*m//g")"
@@ -35,7 +46,8 @@ clean="$(printf '%s\n' "$report" | sed "s/${esc}\[[0-9;]*m//g")"
 tail -n 600 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
 
 if [ "$status" -eq 1 ]; then
-  summary="$(printf '%s\n' "$clean" | grep -E 'need attention|NO AGE KEY' | tail -1)"
+  summary="$(printf '%s\n' "$clean" | grep -E 'need attention|NO AGE KEY|PUBLIC repo' \
+             | sed 's/^secscan: //' | tr '\n' ' ' | sed 's/ *$//')"
   [ -n "$summary" ] || summary="bridge needs attention"
   if [ "$OS" = "mac" ]; then
     osascript -e "display notification \"${summary} Report: ~/Library/Logs/devsync-monitor.log\" with title \"devsync monitor\" sound name \"Ping\"" 2>/dev/null || true

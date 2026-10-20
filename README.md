@@ -196,6 +196,39 @@ global git ignore, so a `/handoff` can never commit a graph.
 
 ---
 
+## Security checker (secscan)
+
+`devsync secscan` sweeps the whole machine and reports only what's **new**:
+
+- every git repo under `$HOME`: new commits on every branch (incremental, so
+  daily runs take seconds), plus uncommitted and untracked files, which are
+  exactly what the next `/handoff` would publish
+- loose files in Downloads, Desktop and Documents that hold credentials
+- GitHub: a repo turning public, new critical Dependabot alerts, secret-scanning
+  alerts on public repos
+- the Obsidian vault: secret hook on, only approved community plugins
+
+It runs daily inside `monitor-notify.sh` (so the same desktop notification
+covers both), or by hand. Secret values are never printed or stored: gitleaks
+runs with `--redact` and only rule, file, line and commit are kept.
+
+Results and review decisions live in the **vault**, not here, because this repo
+is public: `Security/Report - <machine>.md` per machine, and
+`Security/baseline.txt` for findings you've reviewed, which syncs so both
+machines agree. Per-machine scan state is in `~/.local/state/devsync/`.
+
+```
+devsync secscan                          # scan; exit 1 if anything new needs a look
+devsync secscan --full                   # rescan all history and every loose file
+devsync secscan accept <ID> "why"        # one finding is fine (ID from the report)
+devsync secscan accept-path <owner/repo> '<glob>' [rule] "why"
+devsync secscan approve-plugin <id>      # allow an Obsidian community plugin
+```
+
+`monitor-ignore(.local).txt` `repo:` rules skip repos here too.
+
+---
+
 ## Why parked commits don't pollute history
 
 `/handoff` writes a commit called `wip(machine): timestamp`. `/resume` removes

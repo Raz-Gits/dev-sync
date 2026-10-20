@@ -8,6 +8,7 @@
 #                     (both also sync the Obsidian vault, ~/Main Brain;
 #                      resume also rebuilds the repo's graphify code graph)
 #   devsync graph     build or refresh this repo's code graph by hand
+#   devsync secscan   secret + security sweep of every repo, the vault and loose files
 #   devsync doctor    check that this machine has the tooling and keys
 #
 # Works on macOS and on Windows under Git Bash. Keep it bash-3.2 compatible
@@ -395,6 +396,32 @@ cmd_graph() {
   refresh_graph force
 }
 
+# ---------------------------------------------------------------- secscan ----
+
+# A Python 3.8+ interpreter: python3 on the Mac, python or `py -3` on Windows
+# (where python3 may be the Store stub that only opens a download page).
+py3() {
+  local p
+  for p in python3 python; do
+    command -v "$p" >/dev/null 2>&1 \
+      && "$p" -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1 \
+      && { printf '%s' "$p"; return 0; }
+  done
+  command -v py >/dev/null 2>&1 && py -3 -c '' >/dev/null 2>&1 && { printf 'py -3'; return 0; }
+  return 1
+}
+
+cmd_secscan() {
+  local py
+  if ! py="$(py3)"; then
+    # Exit 3 = skipped (see secscan.py): log it, don't alarm.
+    yel "secscan: skipped, needs Python 3.8+ on PATH"
+    return 3
+  fi
+  # $py is unquoted on purpose so `py -3` splits into command + flag.
+  $py "$DEVSYNC_HOME/scripts/secscan.py" "$@"
+}
+
 # --------------------------------------------------------------- handoff ----
 
 cmd_handoff() {
@@ -745,6 +772,8 @@ devsync - move a repo between machines without losing work or secrets
   devsync handoff   park + push, before leaving a machine
   devsync resume    pull + unpack, on arriving at a machine
   devsync graph     build or refresh this repo's graphify code graph
+  devsync secscan   sweep every repo, the vault and loose files for secrets
+                    (accept <ID> "why" | accept-path <repo> <glob> "why" | --full)
 
   devsync add-key   register THIS machine as a secrets recipient (once per machine)
   devsync rekey     re-seal this repo's secrets after a machine was added
@@ -757,6 +786,7 @@ case "${1:-}" in
   handoff)          shift; cmd_handoff "$@" ;;
   resume)           shift; cmd_resume "$@" ;;
   graph)            shift; cmd_graph "$@" ;;
+  secscan)          shift; cmd_secscan "$@" ;;
   add-key|addkey)   shift; cmd_addkey "$@" ;;
   rekey)            shift; cmd_rekey "$@" ;;
   doctor)           shift; cmd_doctor "$@" ;;
